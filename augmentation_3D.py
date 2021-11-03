@@ -3,7 +3,7 @@ import tensorflow as tf
 from scipy import ndimage
 import numpy as np
 import skimage.exposure as ske
-import warnings
+
 
 class Augmentation_3D:
     def __init__(self, transformations):
