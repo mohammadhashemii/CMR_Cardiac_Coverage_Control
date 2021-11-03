@@ -1,0 +1,4 @@
+pipdeptree==2.2.0
+scikit-image==0.18.3
+sklearn==0.0
+tensorflow==2.6.1
