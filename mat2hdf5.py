@@ -25,6 +25,8 @@ idx = 0
 
 print("Converting mat files to HDF5 ...")
 for mf_name in mat_file_names_list:
+    if not mf_name.endswith(".mat"):
+        continue
     mat_file_path = args.data_directory + mf_name
     mat_file = sio.loadmat(mat_file_path)
     mylist = list(mat_file.values())
