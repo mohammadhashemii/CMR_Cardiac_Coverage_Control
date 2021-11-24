@@ -3,13 +3,15 @@ import os
 from data_loader import DataLoader
 from augmentation_3D import Augmentation_3D
 import tensorflow as tf
+from tensorflow.python.client import device_lib
 from sklearn.model_selection import KFold
 from model import CNN3D
 from utils import get_model_checkpoint
 import numpy as np
-import warnings
-warnings.filterwarnings("ignore")
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+device_name = tf.test.gpu_device_name()
+print("Available Devices: {}".format(device_lib.list_local_devices()))
+print("GPU name: {}".format(tf.test.gpu_device_name()))
 
 parser = argparse.ArgumentParser()
 # directories
@@ -19,7 +21,7 @@ parser.add_argument('--dataset', type=str, default='dataset_APEX.hdf5', help='da
 parser.add_argument('--weights_dir', type=str, default='weights/KFold/', help='weights directory')
 parser.add_argument('--results_dir', type=str, default='results/', help='results directory for kfold')
 # training
-parser.add_argument('--no_folds', type=int, default=2, help='number of folds')
+parser.add_argument('--no_folds', type=int, default=5, help='number of folds')
 parser.add_argument('--batch_size', type=int, default=8, help='batch size for training')
 parser.add_argument('--epochs', type=int, default=20, help='number of epochs')
 parser.add_argument('--augmentation', type=bool, default=True, help='whether the training data has been augmented')
@@ -48,7 +50,7 @@ augmentation = Augmentation_3D(transformations=args.transformations)
 
 kfold = KFold(n_splits=args.no_folds, shuffle=True)
 fold_no = 1
-log_file = f"apex_%dfold_results.txt" % args.no_folds
+log_file = "apex_{}fold_results.txt".format(str(args.no_folds))
 f = open(args.results_dir + log_file, 'w')
 f.write("Results for %dfold cross validation. Each fold trained for %d epochs:\n" % (args.no_folds, args.epochs))
 f.close()
@@ -56,77 +58,77 @@ train_acc_per_fold = []
 train_loss_per_fold = []
 test_acc_per_fold = []
 test_loss_per_fold = []
+with tf.device(device_name=device_name):
+    for train_idx, test_idx in kfold.split(dset_x, dset_y):
 
-for train_idx, test_idx in kfold.split(dset_x, dset_y):
+        # build the model
+        cnn_3d = CNN3D(img_size=args.image_size, training=True)
+        model = cnn_3d.build()
+        loss_fn = tf.keras.losses.binary_crossentropy
+        SGD = tf.keras.optimizers.SGD(learning_rate=args.learning_rate,
+                                      momentum=args.momentum,
+                                      clipnorm=args.clip_norm,
+                                      name='SGD')
+        model.compile(loss=loss_fn,
+                      optimizer=SGD,
+                      metrics=['accuracy'])
 
-    # build the model
-    cnn_3d = CNN3D(img_size=args.image_size, training=True)
-    model = cnn_3d.build()
-    loss_fn = tf.keras.losses.binary_crossentropy
-    SGD = tf.keras.optimizers.SGD(learning_rate=args.learning_rate,
-                                  momentum=args.momentum,
-                                  clipnorm=args.clip_norm,
-                                  name='SGD')
-    model.compile(loss=loss_fn,
-                  optimizer=SGD,
-                  metrics=['accuracy'])
+        print('-----------------------------------------------------')
+        print(f'Training for fold {fold_no} ...')
 
-    print('-----------------------------------------------------')
-    print(f'Training for fold {fold_no} ...')
+        # create model checkpoint callback
+        check_point_path = args.weights_dir + args.dataset_name + "_fold_" + str(fold_no) + ".h5"
+        model_checkpoint_callback = get_model_checkpoint(checkpoint_path=check_point_path)
 
-    # create model checkpoint callback
-    check_point_path = args.weights_dir + args.dataset_name + "_fold_" + str(fold_no) + ".h5"
-    model_checkpoint_callback = get_model_checkpoint(checkpoint_path=check_point_path)
-
-    # prepare data
-    train_loader = tf.data.Dataset.from_tensor_slices((dset_x[train_idx], dset_y[train_idx]))
-    test_loader = tf.data.Dataset.from_tensor_slices((dset_x[test_idx], dset_y[test_idx]))
-    train_dataset_original = (
-        train_loader.shuffle(len(dset_x[train_idx]))
-            .map(augmentation.validation_preprocessing)
-            .batch(args.batch_size)
-            .prefetch(2)
-    )
-    if args.augmentation:
-        train_dataset_augmented = (
+        # prepare data
+        train_loader = tf.data.Dataset.from_tensor_slices((dset_x[train_idx], dset_y[train_idx]))
+        test_loader = tf.data.Dataset.from_tensor_slices((dset_x[test_idx], dset_y[test_idx]))
+        train_dataset_original = (
             train_loader.shuffle(len(dset_x[train_idx]))
-                .map(augmentation.train_preprocessing)
+                .map(augmentation.validation_preprocessing)
                 .batch(args.batch_size)
                 .prefetch(2)
         )
-        train_dataset = train_dataset_original.concatenate(train_dataset_augmented)
-        del train_dataset_original, train_dataset_augmented
-    else:
-        train_dataset = train_dataset_original
-        del train_dataset_original
+        if args.augmentation:
+            train_dataset_augmented = (
+                train_loader.shuffle(len(dset_x[train_idx]))
+                    .map(augmentation.train_preprocessing)
+                    .batch(args.batch_size)
+                    .prefetch(2)
+            )
+            train_dataset = train_dataset_original.concatenate(train_dataset_augmented)
+            del train_dataset_original, train_dataset_augmented
+        else:
+            train_dataset = train_dataset_original
+            del train_dataset_original
 
-    test_dataset = (
-        train_loader.shuffle(len(dset_x[test_idx]))
-            .map(augmentation.validation_preprocessing)
-            .batch(args.batch_size)
-            .prefetch(2)
-    )
+        test_dataset = (
+            train_loader.shuffle(len(dset_x[test_idx]))
+                .map(augmentation.validation_preprocessing)
+                .batch(args.batch_size)
+                .prefetch(2)
+        )
 
-    history = model.fit(train_dataset,
-                        validation_data=test_dataset,
-                        epochs=args.epochs,
-                        callbacks=[model_checkpoint_callback])
+        history = model.fit(train_dataset,
+                            validation_data=test_dataset,
+                            epochs=args.epochs,
+                            callbacks=[model_checkpoint_callback])
 
-    # evaluation
-    f = open(args.results_dir + log_file, 'a')
-    print('Evaluation for fold {}'.format(fold_no))
-    model.load_weights(check_point_path)
-    train_loss, train_acc = model.evaluate(train_dataset, verbose=1)
-    test_loss, test_acc = model.evaluate(test_dataset, verbose=1)
-    f.write("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f \n" % (
-    train_acc, test_acc, train_loss, test_loss))
-    print("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f" % (
-    train_acc, test_acc, train_loss, test_loss))
-    train_acc_per_fold.append(train_acc)
-    train_loss_per_fold.append(train_loss)
-    test_acc_per_fold.append(test_acc)
-    test_loss_per_fold.append(test_loss)
-    fold_no = fold_no + 1
+        # evaluation
+        f = open(args.results_dir + log_file, 'a')
+        print('Evaluation for fold {}'.format(fold_no))
+        model.load_weights(check_point_path)
+        train_loss, train_acc = model.evaluate(train_dataset, verbose=1)
+        test_loss, test_acc = model.evaluate(test_dataset, verbose=1)
+        f.write("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f \n" % (
+        train_acc, test_acc, train_loss, test_loss))
+        print("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f" % (
+        train_acc, test_acc, train_loss, test_loss))
+        train_acc_per_fold.append(train_acc)
+        train_loss_per_fold.append(train_loss)
+        test_acc_per_fold.append(test_acc)
+        test_loss_per_fold.append(test_loss)
+        fold_no = fold_no + 1
 
 print('-----------------------------------------------------')
 print("avg_train_acc: %.4f, avg_test_accuracy: %.4f, avg_train_loss: %.4f, avg_test_loss: %.4f" %

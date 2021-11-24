@@ -18,10 +18,10 @@ parser.add_argument('--dataset', type=str, default='dataset_APEX.hdf5', help='da
 parser.add_argument('--model_path', type=str, default='models/apex_model.h5', help='path to the model')
 parser.add_argument('--weights_path', type=str, default='weights/apex_weights.h5', help='path to the model weights for testing')
 parser.add_argument('--best_perturbations_dir', type=str, default='perturbations/', help='path to the perturbations directory')
+
 parser.add_argument('--iterations', type=int, default=500, help='number of times which we want to apply different random perturbations')
 parser.add_argument('--transformations', type=list, default=['rotate', 'flip_horizontally', 'flip_vertically', 'brightness'], help='just some transformation supported')
-parser.add_argument('--batch_size', type=int, default=8, help='batch size for training')
-
+parser.add_argument('--n_pert', type=int, default=10, help='number of random generated perturbations for each sample')
 args = parser.parse_args()
 
 # create data loader
@@ -99,21 +99,24 @@ print("Preparing datasets ...")
 dataset = (
     data.shuffle(len(data))
     .map(augmentation.validation_preprocessing)
-    .batch(args.batch_size)
+    .batch(1)       # since we want to have prediction for each sample
     .prefetch(2)
 )
 # we don't need these anymore
 del dset_x, dset_y, data
 
-#print(model.predict(dataset))
-model.evaluate(dataset)
+for sample in dataset:
+    for i in range(args.n_pert):
+        volume = sample[0][0, :, :, :, 0]   # volume shape must be (128, 128, 3)
+        lime = Lime(volume)
+        superpixels = lime.generate_segmentation(max_iter=1000)
+        layers_perturbation = lime.generate_perturbations(superpixels)
+        perturbed_volume = lime.apply_perturbations(layers_perturbation, superpixels)
+        plot_volume(perturbed_volume)
 
-#volume = dset_x[0]
-#lime = Lime(volume)
-#superpixels = lime.generate_segmentation(max_iter=1000)
-#layers_perturbation = lime.generate_perturbations(superpixels)
-#perturbed_volume = lime.apply_perturbations(layers_perturbation, superpixels)
-#plot_volume(perturbed_volume)
+    if True:
+        break
+
 
 '''
 best_accuracy = 0.0
