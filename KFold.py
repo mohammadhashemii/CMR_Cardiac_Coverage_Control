@@ -138,8 +138,8 @@ with tf.device(device_name=device_name):
         f = open(args.results_dir + log_file, 'a')
         print('Evaluation for fold {}'.format(fold_no))
         model.load_weights(check_point_path)
-        train_loss, train_acc = model.evaluate(train_dataset, verbose=1)
-        test_loss, test_acc = model.evaluate(test_dataset, verbose=1)
+        train_loss, train_acc = model.evaluate(train_dataset, verbose=1, steps=train_size//args.batch_size)
+        test_loss, test_acc = model.evaluate(test_dataset, verbose=1, steps=test_size//args.batch_size)
         f.write("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f \n" % (
             train_acc, test_acc, train_loss, test_loss))
         print("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f" % (
