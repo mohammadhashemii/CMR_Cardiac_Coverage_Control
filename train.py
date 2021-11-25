@@ -61,6 +61,7 @@ with tf.device(device_name=device_name):
     train_dataset_original = (
         train_loader.shuffle(len(X_train))
         .map(augmentation.validation_preprocessing)
+        .repeat()
         .batch(args.batch_size)
         .prefetch(2)
     )
@@ -68,6 +69,7 @@ with tf.device(device_name=device_name):
         train_dataset_augmented = (
             train_loader.shuffle(len(X_train))
             .map(augmentation.train_preprocessing)
+            .repeat()
             .batch(args.batch_size)
             .prefetch(2)
         )
@@ -81,10 +83,12 @@ with tf.device(device_name=device_name):
     test_dataset = (
         train_loader.shuffle(len(X_test))
         .map(augmentation.validation_preprocessing)
+        .repeat()
         .batch(args.batch_size)
         .prefetch(2)
     )
-
+    train_size = len(X_train)
+    test_size = len(X_test)
     # we don't need these anymore
     del X_train, X_test, y_train, y_test
     del dset_x, dset_y
@@ -111,7 +115,9 @@ with tf.device(device_name=device_name):
     model_checkpoint_callback = get_model_checkpoint(checkpoint_path=args.weights_dir + 'apex_weights.h5')
     # training
     history = model.fit(train_dataset,
+                        steps_per_epoch=train_size // args.batch_size,
                         validation_data=test_dataset,
+                        validation_steps=test_size // args.batch_size,
                         epochs=args.epochs,
                         callbacks=[model_checkpoint_callback])
 
