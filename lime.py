@@ -5,12 +5,13 @@ from data_loader import DataLoader
 from augmentation_3D import Augmentation_3D
 import skimage.segmentation
 import numpy as np
+from tqdm import tqdm
 from utils import plot_volume
 import tensorflow as tf
 from tensorflow.python.client import device_lib
 
-gpus = tf.config.experimental.list_physical_devices("GPU")
-tf.config.experimental.set_memory_growth(gpus[0], True)
+#gpus = tf.config.experimental.list_physical_devices("GPU")
+#tf.config.experimental.set_memory_growth(gpus[0], True)
 device_name = tf.test.gpu_device_name()
 print("Available Devices: {}".format(device_lib.list_local_devices()))
 print("GPU name: {}".format(tf.test.gpu_device_name()))
@@ -19,13 +20,14 @@ parser = argparse.ArgumentParser()
 
 # directories
 parser.add_argument('--data_root', type=str, default='data/', help='path to the root of data directory')
-parser.add_argument('--dataset', type=str, default='dataset_APEX.hdf5', help='dataset name')
+parser.add_argument('--dataset', type=str, default='perturbations.hdf5', help='dataset name')
 parser.add_argument('--model_path', type=str, default='models/apex_model.h5', help='path to the model')
 parser.add_argument('--weights_path', type=str, default='weights/_fold0_apex_weights.h5', help='path to the model weights for testing')
 
-parser.add_argument('--iterations', type=int, default=1000, help='number of times which we want to apply different random perturbations')
+parser.add_argument('--iterations', type=int, default=100, help='number of times which we want to apply different random perturbations')
 parser.add_argument('--transformations', type=list, default=['rotate', 'flip_horizontally', 'flip_vertically', 'brightness'], help='just some transformation supported')
 parser.add_argument('--n_pert', type=int, default=10, help='number of random generated perturbations for each sample')
+parser.add_argument('--steps', type=int, default=50, help='Steps which data generated to be saved')
 args = parser.parse_args()
 
 # create data loader
@@ -96,7 +98,7 @@ data = tf.data.Dataset.from_tensor_slices((dset_x, dset_y))
 
 print("Preparing datasets ...")
 dataset = (
-    data.shuffle(len(data))
+    data
     .map(augmentation.validation_preprocessing)
     .batch(1)       # since we want to have prediction for each sample
     .prefetch(2)
@@ -130,28 +132,47 @@ with tf.device(device_name=device_name):
         best_pred = 0.5
         best_volume = None  # generated volume by lime with the most accurate prediction
         best_idx = 0
-        for i in range(args.n_pert):
+        for i in tqdm(range(args.n_pert)):
             superpixels = lime.generate_segmentation(max_iter=args.iterations)
             layers_perturbation = lime.generate_perturbations(superpixels)
             perturbed_volume = lime.apply_perturbations(layers_perturbation, superpixels)
-            #plot_volume(perturbed_volume)
             temp_volume = tf.expand_dims(perturbed_volume, axis=3)
             temp_volume = tf.expand_dims(temp_volume, axis=0)
             pred = model.predict(temp_volume)[0,0]
             if target == 1:
                 if  pred > best_pred:
                     best_pred = pred
-                    best_volume = volume
+                    best_volume = perturbed_volume
                     best_idx = i
             else:   # target = 0
                 if  pred < best_pred:
                     best_pred = pred
-                    best_volume = volume
+                    best_volume = perturbed_volume
                     best_idx = i
-        print("The {}/{} perturbation is chosen with prediction score: {}".format(best_idx, args.n_pert, best_pred))
-        best_perturbations_X.append(best_volume)
-        best_perturbations_Y.append(target)
+        print("The {}/{} perturbation with class {} is chosen with prediction score: {}".format(best_idx, args.n_pert, target, best_pred))
+        if best_volume is not None:
+            best_perturbations_X.append(best_volume)
+            best_perturbations_Y.append(target)
+        else:
+            print()
         idx += 1
+        if idx % args.steps == 0:
+            correct_predicted_samples_X_array = np.array(correct_predicted_samples_X)
+            correct_predicted_samples_Y_array = np.array(correct_predicted_samples_Y)
+            best_perturbations_X_array = np.array(best_perturbations_X)
+            best_perturbations_Y_array = np.array(best_perturbations_Y)
+            with h5py.File(args.data_root + 'correct_predictions.hdf5', 'w') as hf:
+                hf.create_dataset('X', data=correct_predicted_samples_X_array, shape=correct_predicted_samples_X_array.shape,
+                                  compression='gzip', chunks=True)
+                hf.create_dataset('Y', data=correct_predicted_samples_Y_array, shape=(len(correct_predicted_samples_Y_array), 1),
+                                  compression='gzip', chunks=True)
+            print('{} correct predictions saved at: {}'.format(correct_predicted_samples_X_array.shape[0], args.data_root + 'correct_predictions.hdf5'))
+            with h5py.File(args.data_root + 'perturbations.hdf5', 'w') as hf:
+                hf.create_dataset('X', data=best_perturbations_X_array, shape=best_perturbations_X_array.shape, compression='gzip',
+                                  chunks=True)
+                hf.create_dataset('Y', data=best_perturbations_Y_array, shape=(len(best_perturbations_Y_array), 1),
+                                  compression='gzip', chunks=True)
+            print('best perturbations saved at: {}'.format(args.data_root + 'perturbations.hdf5'))
 
 
 correct_predicted_samples_X = np.array(correct_predicted_samples_X)
