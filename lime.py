@@ -85,6 +85,15 @@ class Lime():
 
         return perturbed_volume
 
+    #def compute_cosine_similarity_from_original(self, pert):
+    #    original_image = np.ones(num_superpixels)[np.newaxis, :]  # Perturbation with all superpixels enabled
+    #    distances = sklearn.metrics.pairwise_distances(perturbations, original_image, metric='cosine').ravel()
+    #    distances.shape
+
+    def extract_best_superpixels(self, perts, predictions):
+        perts = np.array(perts)
+        print("perts:", perts.shape)
+        #for i in range(3):  # since there are 3 slices in each volume
 
 # load trained model for evaluating
 print("Model loaded from: {}".format(args.model_path))
@@ -132,6 +141,8 @@ with tf.device(device_name=device_name):
         best_pred = 0.5
         best_volume = None  # generated volume by lime with the most accurate prediction
         best_idx = 0
+        perts = []
+        predictions = []
         for i in tqdm(range(args.n_pert)):
             superpixels = lime.generate_segmentation(max_iter=args.iterations)
             layers_perturbation = lime.generate_perturbations(superpixels)
@@ -139,6 +150,8 @@ with tf.device(device_name=device_name):
             temp_volume = tf.expand_dims(perturbed_volume, axis=3)
             temp_volume = tf.expand_dims(temp_volume, axis=0)
             pred = model.predict(temp_volume)[0,0]
+            perts.append(layers_perturbation)
+            predictions.append(pred)
             if target == 1:
                 if  pred > best_pred:
                     best_pred = pred
@@ -149,6 +162,8 @@ with tf.device(device_name=device_name):
                     best_pred = pred
                     best_volume = perturbed_volume
                     best_idx = i
+        lime.extract_best_superpixels(perts, predictions)
+
         print("The {}/{} perturbation with class {} is chosen with prediction score: {}".format(best_idx, args.n_pert, target, best_pred))
         if best_volume is not None:
             best_perturbations_X.append(best_volume)
