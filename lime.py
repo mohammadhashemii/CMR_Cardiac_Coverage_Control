@@ -9,6 +9,8 @@ from tqdm import tqdm
 from utils import plot_volume
 import tensorflow as tf
 from tensorflow.python.client import device_lib
+from sklearn import metrics
+from sklearn.linear_model import LinearRegression
 
 #gpus = tf.config.experimental.list_physical_devices("GPU")
 #tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -20,7 +22,7 @@ parser = argparse.ArgumentParser()
 
 # directories
 parser.add_argument('--data_root', type=str, default='data/', help='path to the root of data directory')
-parser.add_argument('--dataset', type=str, default='perturbations.hdf5', help='dataset name')
+parser.add_argument('--dataset', type=str, default='dataset_APEX.hdf5', help='dataset name')
 parser.add_argument('--model_path', type=str, default='models/apex_model.h5', help='path to the model')
 parser.add_argument('--weights_path', type=str, default='weights/_fold0_apex_weights.h5', help='path to the model weights for testing')
 
@@ -38,7 +40,7 @@ class Lime():
     def __init__(self, volume):
         self.volume = volume
 
-    def generate_segmentation(self, n_segments=70, compactness=0.3, max_iter=1000):
+    def generate_segmentation(self, n_segments=25, compactness=0.3, max_iter=1000):
         '''
         generate 3 segmentation for images of a volume
         '''
@@ -68,7 +70,6 @@ class Lime():
         return layers_perturbation
 
     def apply_perturbations(self, layers_perturbation: list, superpixels):
-
         perturbed_volume = []
 
         for i in range(len(layers_perturbation)):  # loop over the layers of a volume
@@ -85,16 +86,27 @@ class Lime():
 
         return perturbed_volume
 
-    #def compute_cosine_similarity_from_original(self, pert):
-    #    original_image = np.ones(num_superpixels)[np.newaxis, :]  # Perturbation with all superpixels enabled
-    #    distances = sklearn.metrics.pairwise_distances(perturbations, original_image, metric='cosine').ravel()
-    #    distances.shape
+    def extract_best_superpixels(self, perts, predictions, num_top_features=4):
+        num_superpixels = perts.shape[-1]
+        best_superpixels = []
+        for i in range(3):  # since there are 3 slices in each volume
+            layer_perts = perts[:, i, :]
+            # Compute distances between the original image and each of the perturbed
+            # images and compute weights (importance) of each perturbed image
+            original_image = np.ones(num_superpixels)[np.newaxis, :]  # Perturbation with all superpixels enabled
+            distances = metrics.pairwise_distances(layer_perts, original_image, metric='cosine').ravel()
+            # Use kernel function to compute weights
+            kernel_width = 0.25
+            weights = np.sqrt(np.exp(-(distances ** 2) / kernel_width ** 2))  # Kernel function
+            # Use perturbations, predictions and weights to fit an explainable (linear) model
+            lr = LinearRegression()
+            lr.fit(X=layer_perts, y=predictions, sample_weight=weights)
+            coeff = lr.coef_
+            top_features = np.argsort(coeff)[-num_top_features:]
+            best_superpixels.append(top_features)
 
-    def extract_best_superpixels(self, perts, predictions):
-        perts = np.array(perts)
-        print("perts:", perts.shape)
-        #for i in range(3):  # since there are 3 slices in each volume
-
+        best_superpixels = np.array(best_superpixels)
+        return best_superpixels
 # load trained model for evaluating
 print("Model loaded from: {}".format(args.model_path))
 model = tf.keras.models.load_model(args.model_path)
@@ -143,10 +155,12 @@ with tf.device(device_name=device_name):
         best_idx = 0
         perts = []
         predictions = []
+        superpixels = lime.generate_segmentation(max_iter=args.iterations, n_segments=25)
         for i in tqdm(range(args.n_pert)):
-            superpixels = lime.generate_segmentation(max_iter=args.iterations)
             layers_perturbation = lime.generate_perturbations(superpixels)
             perturbed_volume = lime.apply_perturbations(layers_perturbation, superpixels)
+            plot_volume(perturbed_volume)
+            break
             temp_volume = tf.expand_dims(perturbed_volume, axis=3)
             temp_volume = tf.expand_dims(temp_volume, axis=0)
             pred = model.predict(temp_volume)[0,0]
@@ -162,7 +176,14 @@ with tf.device(device_name=device_name):
                     best_pred = pred
                     best_volume = perturbed_volume
                     best_idx = i
-        lime.extract_best_superpixels(perts, predictions)
+        perts = np.array(perts)
+        predictions = np.array(predictions)
+        best_superpixels = lime.extract_best_superpixels(perts, predictions, num_top_features=6)
+        mask = np.zeros((3, perts.shape[-1]))
+        for i in range(3):
+            mask[i, best_superpixels[i]] = True  # Activate top superpixels
+        final_perturbed_volume = lime.apply_perturbations(mask.tolist(), superpixels)
+        #plot_volume(final_perturbed_volume)
 
         print("The {}/{} perturbation with class {} is chosen with prediction score: {}".format(best_idx, args.n_pert, target, best_pred))
         if best_volume is not None:
