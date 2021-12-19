@@ -55,7 +55,6 @@ class Lime():
                                                     start_label=1)
             superpixels.append(super_pixel)
         superpixels = np.array(superpixels).transpose(1, 2, 0)
-
         return superpixels
 
     def generate_perturbations(self, superpixels) -> list:
@@ -64,7 +63,7 @@ class Lime():
         layers_perturbation = []
         for i in range(superpixels.shape[-1]): # over volume layers
             n_unique_values = len(np.unique(superpixels[:, :, i]))
-            p = np.random.binomial(1, 0.5, size=(1,n_unique_values)).squeeze()
+            p = np.random.binomial(1, 0.5, size=(1, n_unique_values)).squeeze()
             layers_perturbation.append(p)
 
         return layers_perturbation
@@ -155,7 +154,7 @@ with tf.device(device_name=device_name):
         best_idx = 0
         perts = []
         predictions = []
-        superpixels = lime.generate_segmentation(max_iter=args.iterations, n_segments=25)
+        superpixels = lime.generate_segmentation(max_iter=args.iterations, n_segments=25, compactness=0.3)
         for i in tqdm(range(args.n_pert)):
             layers_perturbation = lime.generate_perturbations(superpixels)
             perturbed_volume = lime.apply_perturbations(layers_perturbation, superpixels)
