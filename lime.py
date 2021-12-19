@@ -52,7 +52,8 @@ class Lime():
                                                     n_segments=n_segments,
                                                     compactness=compactness,
                                                     max_iter=max_iter,
-                                                    start_label=1)
+                                                    start_label=1,
+                                                    sigma=1)
             superpixels.append(super_pixel)
         superpixels = np.array(superpixels).transpose(1, 2, 0)
         return superpixels
@@ -68,7 +69,7 @@ class Lime():
 
         return layers_perturbation
 
-    def apply_perturbations(self, layers_perturbation: list, superpixels):
+    def apply_perturbations(self, layers_perturbation, superpixels):
         perturbed_volume = []
 
         for i in range(len(layers_perturbation)):  # loop over the layers of a volume
@@ -158,8 +159,6 @@ with tf.device(device_name=device_name):
         for i in tqdm(range(args.n_pert)):
             layers_perturbation = lime.generate_perturbations(superpixels)
             perturbed_volume = lime.apply_perturbations(layers_perturbation, superpixels)
-            plot_volume(perturbed_volume)
-            break
             temp_volume = tf.expand_dims(perturbed_volume, axis=3)
             temp_volume = tf.expand_dims(temp_volume, axis=0)
             pred = model.predict(temp_volume)[0,0]
@@ -178,11 +177,11 @@ with tf.device(device_name=device_name):
         perts = np.array(perts)
         predictions = np.array(predictions)
         best_superpixels = lime.extract_best_superpixels(perts, predictions, num_top_features=6)
-        mask = np.zeros((3, perts.shape[-1]))
+        mask = np.zeros((3, perts.shape[-1])).astype(int)
         for i in range(3):
             mask[i, best_superpixels[i]] = True  # Activate top superpixels
-        final_perturbed_volume = lime.apply_perturbations(mask.tolist(), superpixels)
-        #plot_volume(final_perturbed_volume)
+        final_perturbed_volume = lime.apply_perturbations(mask, superpixels)
+        plot_volume(final_perturbed_volume)
 
         print("The {}/{} perturbation with class {} is chosen with prediction score: {}".format(best_idx, args.n_pert, target, best_pred))
         if best_volume is not None:
