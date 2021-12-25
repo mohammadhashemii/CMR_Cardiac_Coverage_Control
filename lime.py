@@ -52,8 +52,7 @@ class Lime():
                                                     n_segments=n_segments,
                                                     compactness=compactness,
                                                     max_iter=max_iter,
-                                                    start_label=1,
-                                                    sigma=1)
+                                                    start_label=1)
             superpixels.append(super_pixel)
         superpixels = np.array(superpixels).transpose(1, 2, 0)
         return superpixels
@@ -87,10 +86,20 @@ class Lime():
         return perturbed_volume
 
     def extract_best_superpixels(self, perts, predictions, num_top_features=4):
-        num_superpixels = perts.shape[-1]
+        #num_superpixels = perts.shape[-1]
         best_superpixels = []
-        for i in range(3):  # since there are 3 slices in each volume
-            layer_perts = perts[:, i, :]
+        layer_1 = []
+        layer_2 = []
+        layer_3 = []
+        for p in perts:
+            layer_1.append(p[0])
+            layer_2.append(p[1])
+            layer_3.append(p[2])
+
+        layers = [layer_1, layer_2, layer_3]
+        for l in layers:  # since there are 3 slices in each volume
+            layer_perts = np.array(l)
+            num_superpixels = layer_perts.shape[-1]
             # Compute distances between the original image and each of the perturbed
             # images and compute weights (importance) of each perturbed image
             original_image = np.ones(num_superpixels)[np.newaxis, :]  # Perturbation with all superpixels enabled
@@ -174,12 +183,16 @@ with tf.device(device_name=device_name):
                     best_pred = pred
                     best_volume = perturbed_volume
                     best_idx = i
-        perts = np.array(perts)
-        predictions = np.array(predictions)
+        #perts = np.array(perts)
+        #predictions = np.array(predictions)
         best_superpixels = lime.extract_best_superpixels(perts, predictions, num_top_features=6)
-        mask = np.zeros((3, perts.shape[-1])).astype(int)
+        print(best_superpixels)
+        mask = []
+
         for i in range(3):
-            mask[i, best_superpixels[i]] = True  # Activate top superpixels
+            layer_mask = np.array([0] * len(perts[0][i]))
+            layer_mask[best_superpixels[i]] = True  # Activate top superpixels
+            mask.append(layer_mask)
         final_perturbed_volume = lime.apply_perturbations(mask, superpixels)
         #plot_volume(final_perturbed_volume)
 
