@@ -181,11 +181,11 @@ with tf.device(device_name=device_name):
         for i in range(3):
             mask[i, best_superpixels[i]] = True  # Activate top superpixels
         final_perturbed_volume = lime.apply_perturbations(mask, superpixels)
-        plot_volume(final_perturbed_volume)
+        #plot_volume(final_perturbed_volume)
 
         print("The {}/{} perturbation with class {} is chosen with prediction score: {}".format(best_idx, args.n_pert, target, best_pred))
         if best_volume is not None:
-            best_perturbations_X.append(best_volume)
+            best_perturbations_X.append(final_perturbed_volume)
             best_perturbations_Y.append(target)
         else:
             print()
@@ -207,6 +207,11 @@ with tf.device(device_name=device_name):
                 hf.create_dataset('Y', data=best_perturbations_Y_array, shape=(len(best_perturbations_Y_array), 1),
                                   compression='gzip', chunks=True)
             print('best perturbations saved at: {}'.format(args.data_root + 'perturbations.hdf5'))
+
+            del correct_predicted_samples_X_array
+            del correct_predicted_samples_Y_array
+            del best_perturbations_X_array
+            del best_perturbations_Y_array
 
 
 correct_predicted_samples_X = np.array(correct_predicted_samples_X)
