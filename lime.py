@@ -186,7 +186,6 @@ with tf.device(device_name=device_name):
         #perts = np.array(perts)
         #predictions = np.array(predictions)
         best_superpixels = lime.extract_best_superpixels(perts, predictions, num_top_features=6)
-        print(best_superpixels)
         mask = []
 
         for i in range(3):
