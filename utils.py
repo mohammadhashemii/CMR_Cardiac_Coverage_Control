@@ -42,6 +42,8 @@ def plot_volume(volume, save_fig=False, filename='figure_1.png'):
     else:
         plt.show()
 
+    plt.close(fig)
+
 def get_model_checkpoint(checkpoint_path):
     model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
