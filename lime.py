@@ -193,7 +193,7 @@ with tf.device(device_name=device_name):
             layer_mask[best_superpixels[i]] = True  # Activate top superpixels
             mask.append(layer_mask)
         final_perturbed_volume = lime.apply_perturbations(mask, superpixels)
-        #plot_volume(final_perturbed_volume)
+        plot_volume(final_perturbed_volume, save_fig=True, filename='fig_'+str(idx))
 
         print("The {}/{} perturbation with class {} is chosen with prediction score: {}".format(best_idx, args.n_pert, target, best_pred))
         if best_volume is not None:

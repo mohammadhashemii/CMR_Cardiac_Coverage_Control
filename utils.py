@@ -1,13 +1,14 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
+import os
 
 
 def plot_single_image(img):
     plt.imshow(img, cmap=plt.get_cmap('gray'))
     plt.show()
 
-def plot_volume(volume):
+def plot_volume(volume, save_fig=False, filename='figure_1.png'):
     fig = plt.figure()
     # create a 128 x 128 vertex mesh
     xx, yy = np.meshgrid(np.linspace(0, 10, 128), np.linspace(0, 10, 128))
@@ -34,7 +35,12 @@ def plot_volume(volume):
     ax4.set_zlim((0., 10.))
 
     plt.colorbar(cset)
-    plt.show()
+    if save_fig:
+        if not os.path.exists('images/'):
+            os.makedirs('images/')
+        plt.savefig('images/' + filename)
+    else:
+        plt.show()
 
 def get_model_checkpoint(checkpoint_path):
     model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
