@@ -15,7 +15,7 @@ class LoadDataset(Dataset):
         print(f"LOADING DATA FROM {hdf5_path}...")
         with h5py.File(hdf5_path, 'r') as hf:
             #idx = np.array(hf['idx'])
-            if hdf5_path.contains("masks"):
+            if "masks" in hdf5_path:
                 X = np.array(hf['mask'])
             else:
                 X = np.array(hf['X'])
