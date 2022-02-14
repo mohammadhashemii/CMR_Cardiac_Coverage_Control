@@ -74,8 +74,13 @@ def merge_hdf5_files(file_paths: list, merged_file_path: str):
         hf.create_dataset('Y', data=Y, shape=Y.shape, compression='gzip', chunks=True)
 
     print(mask.shape, Y.shape, idx.shape)
-file_paths= ['data/apex_lime/masks_apex_1.hdf5',
-             'data/apex_lime/masks_apex_2.hdf5']
-merge_hdf5_files(file_paths=file_paths,
-                 merged_file_path='data/apex_lime/masks_apex.hdf5')
 
+def save_img_and_mask(img, mask, filepath):
+
+    fig, ax = plt.subplots(3, 2)
+    for i in range(3):
+        ax[i, 0].imshow(img[-1], cmap='grey')
+        ax[i, 1].imshow(mask[-1], cmap='grey')
+        plt.xticks([]), plt.yticks([])
+
+    plt.savefig(filepath)
