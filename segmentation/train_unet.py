@@ -11,6 +11,7 @@ warnings.filterwarnings('ignore')
 from data_loader import LoadDataset
 from attention_unet import UNet3D
 from dice_score import dice_loss
+#from torchgeometry.losses import dice_loss
 
 parser = argparse.ArgumentParser()
 # directories
@@ -22,6 +23,7 @@ parser.add_argument('--exp_no', type=str, default='00', help='experiment number'
 
 # training
 parser.add_argument('--epochs', type=int, default=50, help='number of epochs')
+parser.add_argument('--resume', type=str, help='load weights')
 parser.add_argument('--test_size', type=int, default=0.2, help='percentage of test size')
 parser.add_argument('--batch_size', type=int, default=8, help='batch_size')
 parser.add_argument('--num_workers', type=int, default=2, help='number of workers')
@@ -62,17 +64,23 @@ unet = UNet3D(in_channels=1,
               out_channels=1,
               final_sigmoid=True)
 unet.to(device=device)
+if args.resume is not None:
+    unet.load_state_dict(torch.load(args.resume))
+    print(f"Model weights {args.resume} loaded!")
 
 # set up optimizer, the loss, learning rate and etc.
 optimizer = torch.optim.RMSprop(unet.parameters(),
                                 lr=args.learning_rate,
                                 weight_decay=args.weight_decay,
                                 momentum=args.momentum)
-criterion = nn.BCEWithLogitsLoss()
-epoch_train_loss_list = []
-epoch_test_loss_list = []
+
 # start training
 for epoch in range(args.epochs):
+    criterion = nn.BCEWithLogitsLoss()
+    epoch_train_loss_list = []
+    epoch_test_loss_list = []
+    epoch_train_dice_score_list = []
+    epoch_test_dice_score_list = []
     unet.train()
     try:
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{args.epochs}', unit='img') as pbar:
@@ -80,8 +88,13 @@ for epoch in range(args.epochs):
                 images = batch['image'].to(device=device, dtype=torch.float32)
                 targets = batch['target'].to(device=device, dtype=torch.float32)
                 prediction, pool_fea = unet(images)
-                train_loss = dice_loss(prediction[:, 0, :, :, :], targets[:, 0, :, :, :])
+
+                probs = (torch.sigmoid(prediction) > 0.5).float()
+                dl = dice_loss(probs[:, 0, :, :, :], targets[:, 0, :, :, :])
+                dice_score = 1 - dl
+                train_loss = criterion(prediction[:, 0, :, :, :], targets[:, 0, :, :, :]) + dl
                 epoch_train_loss_list.append(train_loss)
+                epoch_train_dice_score_list.append(dice_score)
 
                 optimizer.zero_grad()
                 train_loss.backward()
@@ -89,6 +102,7 @@ for epoch in range(args.epochs):
                 pbar.update(images.shape[0])
 
             avg_train_loss = torch.mean(torch.tensor(epoch_train_loss_list))
+            avg_train_dice_score = torch.mean(torch.tensor(epoch_train_dice_score_list))
 
             # evaluate
             for batch in test_loader:
@@ -97,15 +111,22 @@ for epoch in range(args.epochs):
                 with torch.no_grad():
                     # predict the mask
                     prediction, pool_fea = unet(images)
-                    test_loss = dice_loss(prediction[:, 0, :, :, :], targets[:, 0, :, :, :])
+                    probs = (torch.sigmoid(prediction) > 0.5).float()
+                    dl = dice_loss(probs[:, 0, :, :, :], targets[:, 0, :, :, :])
+                    dice_score = 1 - dl
+                    test_loss = criterion(prediction, targets) + dl
                     epoch_test_loss_list.append(test_loss)
-            avg_test_loss = torch.mean(torch.tensor(epoch_test_loss_list))
+                    epoch_test_dice_score_list.append(dice_score)
 
-            log_file_path = args.exp_dir + args.exp_no + f"dice_score.txt"
-            log = f"Train loss: {avg_train_loss}, Test loss:{avg_test_loss}\n"
-            print(log)
+            avg_test_loss = torch.mean(torch.tensor(epoch_test_loss_list))
+            avg_test_dice_score = torch.mean(torch.tensor(epoch_test_dice_score_list))
+
+            log_file_path = args.exp_dir + args.exp_no + f"/loss.txt"
+            loss_log = f"Train loss: {avg_train_loss}, Test loss:{avg_test_loss}\n"
+            dice_log = f"Train dice score: {avg_train_dice_score}, Test dice score:{avg_test_dice_score}\n\n"
+            print(loss_log+dice_log)
             with open(log_file_path, "a") as f:
-                f.write(log)
+                f.write(loss_log+dice_log)
             f.close()
         print(f"Model saved at {args.exp_dir}{args.exp_no}/exp{args.exp_no}.pth")
         torch.save(unet.state_dict(), f"{args.exp_dir}{args.exp_no}/exp{args.exp_no}.pth")

@@ -5,11 +5,13 @@ from torch.utils.data import Dataset
 
 
 class LoadDataset(Dataset):
-    def __init__(self, images_hdf5_path, targets_hdf5_path):
+    def __init__(self, images_hdf5_path, targets_hdf5_path, contains_target=True):
+        self.contains_target = contains_target
         self.images_hdf5_path = images_hdf5_path
-        self.targets_hdf5_path = targets_hdf5_path
         self.images_ndarray = self._read_hdf5(self.images_hdf5_path)
-        self.targets_ndarray = self._read_hdf5(self.targets_hdf5_path)
+        if contains_target:
+            self.targets_hdf5_path = targets_hdf5_path
+            self.targets_ndarray = self._read_hdf5(self.targets_hdf5_path)
 
     def _read_hdf5(self, hdf5_path):
         print(f"LOADING DATA FROM {hdf5_path}...")
@@ -27,12 +29,17 @@ class LoadDataset(Dataset):
 
     def __getitem__(self, idx):
         img = self.images_ndarray[idx]
-        target = self.targets_ndarray[idx]
+        if self.contains_target:
+            target = self.targets_ndarray[idx]
 
-        return {
-            'image': torch.as_tensor(img).float(),
-            'target': torch.as_tensor(target).float(),
-        }
+            return {
+                'image': torch.as_tensor(img).float(),
+                'target': torch.as_tensor(target).float()
+            }
+        else:
+            return {
+                'image': torch.as_tensor(img).float(),
+            }
 
 
 

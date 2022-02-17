@@ -3,22 +3,24 @@ import os
 import torch
 from PIL import Image
 import numpy as np
-from torch._C import dtype
+import h5py
 from torch.utils.data import DataLoader, random_split
 
 from data_loader import LoadDataset
 from attention_unet import UNet3D
 from utils import save_img_and_mask
+from dice_score import dice_loss
 
 parser = argparse.ArgumentParser()
 # directories
 parser.add_argument('--data_root', type=str, default='data/', help='path to the root of data directory')
-parser.add_argument('--images_path', type=str, default='apex_lime/correct_predictions_apex.hdf5', help='images path')
+parser.add_argument('--images_path', type=str, default='apex_lime/wrong_predictions_apex.hdf5', help='images path')
 parser.add_argument('--target_path', type=str, default='apex_lime/masks_apex.hdf5', help='targets path')
 parser.add_argument('--exp_dir', type=str, default='segmentation/experiments/', help='saved experiences directory')
 parser.add_argument('--exp_no', type=str, default='00', help='experiment number')
 
 # prediction
+parser.add_argument('--evaluate', type=int, default=1, help='whether evaluate the predictions or not')
 parser.add_argument('--save_preds_no', type=int, default=50, help='number of samples to save')
 parser.add_argument('--out_threshold', type=float, default=0.5, help='threshold for mask prediction')
 parser.add_argument('--test_size', type=int, default=0.2, help='percentage of test size')
@@ -37,13 +39,10 @@ loader_args = dict(batch_size=1,
                    num_workers=2)
 
 dataset = LoadDataset(images_hdf5_path=args.data_root + args.images_path,
-                      targets_hdf5_path=args.data_root + args.target_path)
+                      targets_hdf5_path=None,
+                      contains_target=False)
 
-# to get the samples used in the test set for prediction
-n_test = int(len(dataset) * args.test_size)
-n_train = len(dataset) - n_test
-train_set, test_set = random_split(dataset, [n_train, n_test], generator=torch.Generator().manual_seed(0))
-test_loader = DataLoader(test_set, shuffle=False, **loader_args)
+test_loader = DataLoader(dataset, shuffle=False, **loader_args)
 
 # load model
 unet = UNet3D(in_channels=1,
@@ -62,24 +61,35 @@ def mask_to_image(mask: np.ndarray):
 
 # prediction
 unet.eval()
+results = []
 idx = 0
 with torch.no_grad():
     for batch in test_loader:  # each batch contains only 1 sample
-        if idx > args.save_preds_no:
-            print(f"results saved at {results_dir}")
-            break
         image = batch['image'].to(device=device, dtype=torch.float32)
-        ground_truth = batch['target'].to(device=device, dtype=torch.float32)
+        if args.evaluate:
+            ground_truth = batch['target'].to(device=device, dtype=torch.float32)
 
         pred, _ = unet(image)
         probs = torch.sigmoid(pred)[0, 0] > args.out_threshold
-
         image = image[0, 0].cpu().numpy()
-        ground_truth = ground_truth[0, 0].cpu().numpy()
         mask = probs.cpu().numpy()
-        save_img_and_mask(image, mask, ground_truth, filepath=results_dir + f"{idx}.jpg")
+        if args.evaluate:
+            dice_score = 1 - dice_loss(probs.float(), ground_truth[0, 0])
+            ground_truth = ground_truth[0, 0].cpu().numpy()
+            title = f"Dice score:{np.round(dice_score.cpu().numpy(), 2)}"
+        else:
+            title = ""
+            ground_truth = np.multiply(image, mask) # actually it's not ground truth :)
+            results.append(ground_truth)
+
+        save_img_and_mask(image, mask, ground_truth, title, filepath=results_dir + f"{idx}.jpg")
         idx += 1
 
+results = np.array(results)
+Y = np.array([1] * len(results))
+with h5py.File(args.data_root + 'apex_lime/wrong_predicted_segmentation_result.hdf5', 'w') as hf:
+    dset_x = hf.create_dataset('X', data=results, shape=results.shape, compression='gzip', chunks=True)
+    dset_y = hf.create_dataset('Y', data=Y, shape=(len(Y), 1), compression='gzip', chunks=True)
 
 
 
