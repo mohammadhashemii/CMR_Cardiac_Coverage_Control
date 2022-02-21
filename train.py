@@ -9,7 +9,10 @@ from tensorflow.python.client import device_lib
 from sklearn.model_selection import train_test_split
 from model import CNN3D
 from contextlib import redirect_stdout
+from sklearn.model_selection import KFold
 
+#gpus = tf.config.experimental.list_physical_devices("GPU")
+#tf.config.experimental.set_memory_growth(gpus[0], True)
 device_name = tf.test.gpu_device_name()
 print("Available Devices: {}".format(device_lib.list_local_devices()))
 print("GPU name: {}".format(tf.test.gpu_device_name()))
@@ -30,6 +33,7 @@ parser.add_argument('--image_size', type=tuple, default=(128, 128), help='image 
 parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
 parser.add_argument('--clip_norm', type=float, default=0.35, help='clip norm')
+parser.add_argument('--fold_no', type=int, default=0, help='fold number')
 
 args = parser.parse_args()
 
@@ -41,25 +45,29 @@ if not os.path.exists(args.weights_dir):
 
 
 
-# create data loader
-data_loader = DataLoader(hdf5_path=args.data_root + args.dataset)
-dset_x, dset_y = data_loader.read_data()
 # plot a single layer of a random volume
 #plot_single_image(dset_x[1,:,:,1])
 
 # transform dataset
 augmentation = Augmentation_3D(transformations=args.transformations)
-
+kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 with tf.device(device_name=device_name):
-    X_train, X_test, y_train, y_test = train_test_split(dset_x, dset_y, test_size=args.test_size, random_state=42)
-    train_loader = tf.data.Dataset.from_tensor_slices((X_train, y_train))
-    test_loader = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+    # create data loader
+    data_loader = DataLoader(hdf5_path=args.data_root + args.dataset)
+    dset_x, dset_y = data_loader.read_data()
+    train_test_indices = list(kfold.split(dset_x, dset_y))
+    train_idx, test_idx = train_test_indices[args.fold_no]
+    train_size = len(dset_x[train_idx])
+    test_size = len(dset_x[test_idx])
+    train_loader = tf.data.Dataset.from_tensor_slices((dset_x[train_idx], dset_y[train_idx]))
+    test_loader = tf.data.Dataset.from_tensor_slices((dset_x[test_idx], dset_y[test_idx]))
 
+    del dset_x, dset_y, data_loader
     print("Preparing train/test datasets ...")
     # prepare train dataset
     #           training data
     train_dataset_original = (
-        train_loader.shuffle(len(X_train))
+        train_loader.shuffle(train_size)
         .map(augmentation.validation_preprocessing)
         .repeat()
         .batch(args.batch_size)
@@ -67,7 +75,7 @@ with tf.device(device_name=device_name):
     )
     if args.augmentation:
         train_dataset_augmented = (
-            train_loader.shuffle(len(X_train))
+            train_loader.shuffle(train_size)
             .map(augmentation.train_preprocessing)
             .repeat()
             .batch(args.batch_size)
@@ -81,17 +89,16 @@ with tf.device(device_name=device_name):
 
     #           test data
     test_dataset = (
-        train_loader.shuffle(len(X_test))
+        train_loader.shuffle(test_size)
         .map(augmentation.validation_preprocessing)
         .repeat()
         .batch(args.batch_size)
         .prefetch(2)
     )
-    train_size = len(X_train)
-    test_size = len(X_test)
+
     # we don't need these anymore
-    del X_train, X_test, y_train, y_test
-    del dset_x, dset_y
+    #del X_train, X_test, y_train, y_test
+    del train_loader, test_loader
 
     print("Building the model ...")
     # Define model
@@ -112,7 +119,7 @@ with tf.device(device_name=device_name):
     print("Model built. Model summary saved in " + args.model_dir + 'model_summary.txt')
     print("=======================")
 
-    model_checkpoint_callback = get_model_checkpoint(checkpoint_path=args.weights_dir + 'apex_weights.h5')
+    model_checkpoint_callback = get_model_checkpoint(checkpoint_path=args.weights_dir + '_fold' + str(args.fold_no) + '_apex_weights.h5')
     # training
     history = model.fit(train_dataset,
                         steps_per_epoch=train_size // args.batch_size,
