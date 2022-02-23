@@ -89,7 +89,7 @@ with tf.device(device_name=device_name):
 
     #           test data
     test_dataset = (
-        train_loader.shuffle(test_size)
+        test_loader.shuffle(test_size)
         .map(augmentation.validation_preprocessing)
         .repeat()
         .batch(args.batch_size)

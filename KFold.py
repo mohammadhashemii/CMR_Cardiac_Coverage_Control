@@ -53,7 +53,7 @@ data_loader = DataLoader(hdf5_path=args.data_root + args.dataset)
 # transform dataset
 augmentation = Augmentation_3D(transformations=args.transformations)
 
-kfold = KFold(n_splits=args.no_folds, shuffle=True)
+kfold = KFold(n_splits=args.no_folds, shuffle=True, random_state=42)
 fold_no = 1
 log_file = "apex_{}fold_results.txt".format(str(args.no_folds))
 f = open(args.results_dir + log_file, 'w')
@@ -103,7 +103,7 @@ with tf.device(device_name=device_name):
             del train_dataset_original
 
         test_dataset = (
-            train_loader.shuffle(test_size)
+            test_loader.shuffle(test_size)
                 .map(augmentation.validation_preprocessing)
                 .repeat()
                 .batch(args.batch_size)
@@ -134,10 +134,12 @@ with tf.device(device_name=device_name):
                             epochs=args.epochs,
                             callbacks=[model_checkpoint_callback])
 
+        del history, model_checkpoint_callback
         # evaluation
         f = open(args.results_dir + log_file, 'a')
         print('Evaluation for fold {}'.format(fold_no))
         model.load_weights(check_point_path)
+        print("Weights loaded from: {}".format(check_point_path))
         train_loss, train_acc = model.evaluate(train_dataset, verbose=1, steps=train_size//args.batch_size)
         test_loss, test_acc = model.evaluate(test_dataset, verbose=1, steps=test_size//args.batch_size)
         f.write("train_accuracy: %.4f, test_accuracy: %.4f, train_loss: %.4f, test_loss: %.4f \n" % (
