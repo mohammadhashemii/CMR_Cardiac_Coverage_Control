@@ -6,7 +6,8 @@ from augmentation_3D import Augmentation_3D
 import tensorflow as tf
 from tensorflow.python.client import device_lib
 from model import CNN3D
-from sklearn.model_selection import KFold
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
+import numpy as np
 
 gpus = tf.config.experimental.list_physical_devices("GPU")
 tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -40,12 +41,12 @@ with tf.device(device_name=device_name):
     test_size = len(dset_x)
     test_loader = tf.data.Dataset.from_tensor_slices((dset_x, dset_y))
 
-    del dset_x, dset_y, data_loader
+    del dset_x, data_loader
 
     #           test data
     test_dataset = (
-        test_loader.shuffle(test_size)
-        .map(augmentation.validation_preprocessing)
+        #test_loader.shuffle(test_size)
+        test_loader.map(augmentation.validation_preprocessing)
         .repeat()
         .batch(args.batch_size)
         .prefetch(2)
@@ -68,10 +69,23 @@ with tf.device(device_name=device_name):
 
     model.load_weights(args.weights_path)
     print("Weights loaded from: {}".format(args.weights_path))
-    test_loss, test_acc = model.evaluate(test_dataset, verbose=1, steps=test_size//args.batch_size)
+    #test_loss, test_acc = model.evaluate(test_dataset, verbose=1, steps=test_size//args.batch_size)
+    test_preds = model.predict(test_dataset, verbose=1, steps=test_size//args.batch_size)
+    test_preds = tf.greater(test_preds, .5)
 
-    print("Test loss: {}".format(test_loss))
-    print("Test accuracy: {}".format(test_acc))
+    acc = accuracy_score(dset_y[:-2], test_preds)
+    precision = precision_score(dset_y[:-2], test_preds)
+    recall = recall_score(dset_y[:-2], test_preds)
+    f1 = f1_score(dset_y[:-2], test_preds)
+    auc = roc_auc_score(dset_y[:-2], test_preds)
+    cm = confusion_matrix(dset_y[:-2], test_preds)
+
+    print("accuracy: {}".format(acc))
+    print("precision: {}".format(precision))
+    print("recall: {}".format(recall))
+    print("f1: {}".format(f1))
+    print("auc: {}".format(auc))
+    print("cm: {}".format(cm))
 
 
 
