@@ -4,14 +4,13 @@ import json
 import torch
 from tqdm import tqdm
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, ConcatDataset
 import warnings
 warnings.filterwarnings('ignore')
 
 from data_loader import LoadDataset
 from attention_unet import UNet3D
-from dice_score import dice_loss
-#from torchgeometry.losses import dice_loss
+from losses import dice_loss, jaccard_loss
 
 parser = argparse.ArgumentParser()
 # directories
@@ -49,15 +48,31 @@ loader_args = dict(batch_size=args.batch_size,
                    num_workers=args.num_workers,
                    pin_memory=True)
 
-dataset = LoadDataset(images_hdf5_path=args.data_root + args.images_path,
-                      targets_hdf5_path=args.data_root + args.target_path)
+original_dataset = LoadDataset(images_hdf5_path=args.data_root + args.images_path,
+                               targets_hdf5_path=args.data_root + args.target_path,
+                               transform=False)
+
+transformed_dataset = LoadDataset(images_hdf5_path=args.data_root + args.images_path,
+                                  targets_hdf5_path=args.data_root + args.target_path,
+                                  transform=True)
+
 
 # split train/test
-n_test = int(len(dataset) * args.test_size)
-n_train = len(dataset) - n_test
-train_set, test_set = random_split(dataset, [n_train, n_test], generator=torch.Generator().manual_seed(0))
+n_test = int(len(original_dataset) * args.test_size)
+n_train = len(original_dataset) - n_test
+original_train_set, original_test_set = random_split(original_dataset, [n_train, n_test], generator=torch.Generator().manual_seed(0))
+transformed_train_set, transformed_test_set = random_split(transformed_dataset, [n_train, n_test], generator=torch.Generator().manual_seed(0))
+
+train_set = ConcatDataset([original_train_set, transformed_train_set])
+n_train = len(train_set)
+test_set = original_test_set
+
 train_loader = DataLoader(train_set, shuffle=False, **loader_args)
 test_loader = DataLoader(test_set, shuffle=False, **loader_args)
+
+del original_dataset, transformed_dataset
+del transformed_train_set, transformed_test_set
+del original_train_set, original_test_set
 
 # model creation
 unet = UNet3D(in_channels=1,
@@ -80,7 +95,9 @@ for epoch in range(args.epochs):
     epoch_train_loss_list = []
     epoch_test_loss_list = []
     epoch_train_dice_score_list = []
+    epoch_train_jaccard_score_list = []
     epoch_test_dice_score_list = []
+    epoch_test_jaccard_score_list = []
     unet.train()
     try:
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{args.epochs}', unit='img') as pbar:
@@ -91,10 +108,13 @@ for epoch in range(args.epochs):
 
                 probs = (torch.sigmoid(prediction) > 0.5).float()
                 dl = dice_loss(probs[:, 0, :, :, :], targets[:, 0, :, :, :])
+                jl = jaccard_loss(probs[:, 0, :, :, :], targets[:, 0, :, :, :])
                 dice_score = 1 - dl
-                train_loss = criterion(prediction[:, 0, :, :, :], targets[:, 0, :, :, :]) + dl
+                jaccard_score = 1 - jl
+                train_loss = criterion(prediction[:, 0, :, :, :], targets[:, 0, :, :, :]) + dl + jl
                 epoch_train_loss_list.append(train_loss)
                 epoch_train_dice_score_list.append(dice_score)
+                epoch_train_jaccard_score_list.append(jaccard_score)
 
                 optimizer.zero_grad()
                 train_loss.backward()
@@ -103,6 +123,7 @@ for epoch in range(args.epochs):
 
             avg_train_loss = torch.mean(torch.tensor(epoch_train_loss_list))
             avg_train_dice_score = torch.mean(torch.tensor(epoch_train_dice_score_list))
+            avg_train_jaccard_score = torch.mean(torch.tensor(epoch_train_jaccard_score_list))
 
             # evaluate
             for batch in test_loader:
@@ -113,27 +134,28 @@ for epoch in range(args.epochs):
                     prediction, pool_fea = unet(images)
                     probs = (torch.sigmoid(prediction) > 0.5).float()
                     dl = dice_loss(probs[:, 0, :, :, :], targets[:, 0, :, :, :])
+                    jl = jaccard_loss(probs[:, 0, :, :, :], targets[:, 0, :, :, :])
                     dice_score = 1 - dl
-                    test_loss = criterion(prediction, targets) + dl
+                    jaccard_score = 1 - jl
+                    test_loss = criterion(prediction, targets) + dl + jl
                     epoch_test_loss_list.append(test_loss)
                     epoch_test_dice_score_list.append(dice_score)
+                    epoch_test_jaccard_score_list.append(jaccard_score)
 
             avg_test_loss = torch.mean(torch.tensor(epoch_test_loss_list))
             avg_test_dice_score = torch.mean(torch.tensor(epoch_test_dice_score_list))
+            avg_test_jaccard_score = torch.mean(torch.tensor(epoch_test_jaccard_score_list))
 
             log_file_path = args.exp_dir + args.exp_no + f"/loss.txt"
             loss_log = f"Train loss: {avg_train_loss}, Test loss:{avg_test_loss}\n"
-            dice_log = f"Train dice score: {avg_train_dice_score}, Test dice score:{avg_test_dice_score}\n\n"
-            print(loss_log+dice_log)
+            dice_log = f"Train dice score: {avg_train_dice_score}, Test dice score:{avg_test_dice_score}\n"
+            jaccard_log = f"Train jaccard score: {avg_train_jaccard_score}, Test jaccard score:{avg_test_jaccard_score}\n\n"
+            print(loss_log+dice_log+jaccard_log)
             with open(log_file_path, "a") as f:
-                f.write(loss_log+dice_log)
+                f.write(loss_log+dice_log+jaccard_log)
             f.close()
         print(f"Model saved at {args.exp_dir}{args.exp_no}/exp{args.exp_no}.pth")
         torch.save(unet.state_dict(), f"{args.exp_dir}{args.exp_no}/exp{args.exp_no}.pth")
     except KeyboardInterrupt:
         print(f"Model saved at {args.exp_dir}{args.exp_no}/exp{args.exp_no}.pth")
         torch.save(unet.state_dict(), f"{args.exp_dir}{args.exp_no}/exp{args.exp_no}.pth")
-
-
-
-

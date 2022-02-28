@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, random_split
 from data_loader import LoadDataset
 from attention_unet import UNet3D
 from utils import save_img_and_mask
-from dice_score import dice_loss
+from losses import dice_loss, jaccard_loss
 
 parser = argparse.ArgumentParser()
 # directories
@@ -75,8 +75,9 @@ with torch.no_grad():
         mask = probs.cpu().numpy()
         if args.evaluate:
             dice_score = 1 - dice_loss(probs.float(), ground_truth[0, 0])
+            jaccard_score = 1 - jaccard_loss(probs.float(), ground_truth[0, 0])
             ground_truth = ground_truth[0, 0].cpu().numpy()
-            title = f"Dice score:{np.round(dice_score.cpu().numpy(), 2)}"
+            title = f"Dice score:{round(dice_score.cpu().numpy(), 2)}, Jaccard score:{round(jaccard_score.cpu().numpy(), 2)}"
         else:
             title = ""
             ground_truth = np.multiply(image, mask) # actually it's not ground truth :)
