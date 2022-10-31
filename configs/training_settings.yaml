@@ -1,0 +1,14 @@
+# dataset configs
+data_path: ./data/APEX/
+data_name: APEX
+input_size: 128
+
+# dataloader configs
+data_loader:
+  batch_size: 2
+  shuffle: True
+
+# training settings
+n_epochs: 10
+lr: 0.001
+momentum: 0.9
