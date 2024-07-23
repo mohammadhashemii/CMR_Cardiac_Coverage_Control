@@ -12,6 +12,11 @@
 Icon
 
 
+
+weights/
+results/
+data/
+
 # Thumbnails
 ._*
 
