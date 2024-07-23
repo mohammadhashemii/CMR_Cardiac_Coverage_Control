@@ -1,4 +1,4 @@
-# Automated Cardiac Coverage Assessment in Cardiovascular Magnetic Resonance Imaging using an Explainable Salient Region Detection Model
+# Automated Cardiac Coverage Assessment in Cardiovascular Magnetic Resonance Imaging using an Explainable Recurrent 3D Dual-Domain Convolutional Network
 
 ## Proposed Framework
 
