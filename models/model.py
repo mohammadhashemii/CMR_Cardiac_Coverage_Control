@@ -1,5 +1,5 @@
 from keras.models import Model, Input
-from keras.layers import Conv3D, Dense, Dropout, Flatten, MaxPooling3D, ReLU, BatchNormalization
+from tensorflow.keras.layers import Conv3D, Dense, Dropout, Flatten, MaxPooling3D, ReLU, BatchNormalization
 import tensorflow as tf
 
 class CNN3D(tf.keras.models.Model):
@@ -16,21 +16,21 @@ class CNN3D(tf.keras.models.Model):
         X = ReLU(name="activation_conv1")(X)
 
         X = MaxPooling3D(pool_size=(2, 2, 1), strides=(2, 2, 2), padding='valid', name='pool1')(X)
-        X = BatchNormalization()(X)
+        #X = BatchNormalization()(X)
 
         X = Conv3D(filters=16, kernel_size=(13, 13, 2), strides=(1, 1, 1), padding='valid', name='conv2',
                        kernel_initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01, seed=None))(X)
         X = ReLU(name="activation_conv2")(X)
 
         X = MaxPooling3D(pool_size=(3, 3, 1), strides=(1, 1, 1), padding='valid', name='pool2')(X)
-        x = BatchNormalization()(X)
+        #X = BatchNormalization()(X)
 
         X = Conv3D(filters=64, kernel_size=(10, 10, 1), strides=(1, 1, 1), padding='valid', name='conv3',
                        kernel_initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01, seed=None))(X)
         X = ReLU(name="activation_conv3")(X)
 
         X = MaxPooling3D(pool_size=(2, 2, 1), strides=(1, 1, 1), name='pool3')(X)
-        X = BatchNormalization()(X)
+        #X = BatchNormalization()(X)
 
         X = Flatten()(X)
         X = Dense(units=64, name='fc1')(X)
@@ -48,3 +48,8 @@ class CNN3D(tf.keras.models.Model):
         self.model = model
 
         return model
+
+
+cnn_3d = CNN3D(img_size=(128, 128), training=True)
+model = cnn_3d.build()
+print("Number of total parameteres: {}".format(cnn_3d.count_params()))

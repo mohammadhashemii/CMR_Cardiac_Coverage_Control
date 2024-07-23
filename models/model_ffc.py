@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import flatten
-from torchinfo import summary
+# from torchinfo import summary
 
 class FourierUnit(nn.Module):
     def __init__(self, in_channels, out_channels, groups=1):
@@ -168,32 +168,67 @@ class FFC_BN_ACT(nn.Module):
 class FFC3D(nn.Module):
     def __init__(self, input_nc, norm_layer=nn.BatchNorm3d, padding_type='reflect',
                  activation_layer=nn.ReLU(True), is_training=True,
-                 init_conv_kwargs={}, internal_conv_kwargs={}):
+                 init_conv_kwargs={}, internal_conv_kwargs={}, normal_conv_kwargs={}):
         super(FFC3D, self).__init__()
         self.is_training = is_training
-        self.conv1 = FFC_BN_ACT(input_nc, 16, kernel_size=(1, 7, 7),
-                                    padding=1, norm_layer=norm_layer, stride=2,
-                                    activation_layer=activation_layer, **init_conv_kwargs)
-        self.avgpool1 = nn.AvgPool3d(kernel_size=(1, 2, 2), stride=(2, 2, 2))
-        self.conv2 = FFC_BN_ACT(16, 16, kernel_size=(1, 3, 3), stride=2,
-                                    padding=1, norm_layer=norm_layer,
-                                    activation_layer=activation_layer, **internal_conv_kwargs)
 
-        self.conv3 = FFC_BN_ACT(16, 64, kernel_size=(1, 3, 3),
-                                    padding=0, norm_layer=norm_layer, stride=2,
-                                    activation_layer=activation_layer, **internal_conv_kwargs)
+        # self.conv1_1 = nn.Conv3d(input_nc, 16, kernel_size=(1, 7, 7), stride=(1, 1, 1), padding=0)                           
+        # self.conv1_2 = nn.Conv3d(16, 16, kernel_size=(2, 13, 13), stride=(1, 1, 1), padding=0)
+        # self.conv1_3 = nn.Conv3d(16, 64, kernel_size=(1, 10, 10), stride=(1, 1, 1), padding=0)
+        # self.maxpool1 = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=2)
+        # self.maxpool2 = nn.MaxPool3d(kernel_size=(1, 3, 3), stride=1)
+        # self.maxpool3 = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=1)
+        # self.relu1 = nn.ReLU(True)
+        # self.relu2 = nn.ReLU(True)
+        # self.relu3 = nn.ReLU(True)
+        # self.batchnorm1 = nn.BatchNorm3d(16)
+        # self.batchnorm2 = nn.BatchNorm3d(16)
+        # self.batchnorm3 = nn.BatchNorm3d(64)
 
-        self.fc1 = nn.Linear(in_features=28800, out_features=64)
-        self.fc2 = nn.Linear(in_features=64, out_features=4)
-        self.fc3 = nn.Linear(in_features=4, out_features=1)
-        self.sigmoid = nn.Sigmoid()
-        self.dropout = nn.Dropout(0.1)
+        self.ffc_conv1 = FFC_BN_ACT(input_nc, 16, kernel_size=(1, 7, 7),
+                                     padding=0, norm_layer=norm_layer, stride=2,
+                                     activation_layer=activation_layer, **init_conv_kwargs)
+
+        self.ffc_conv2 = FFC_BN_ACT(16, 16, kernel_size=(2, 13, 13),
+                                     padding=(0, 5, 5), norm_layer=norm_layer, stride=2,
+                                     activation_layer=activation_layer, **internal_conv_kwargs)
+
+        self.ffc_conv3 = FFC_BN_ACT(16, 64, kernel_size=(1, 11, 11),
+                                     padding=(0, 5, 5), norm_layer=norm_layer, stride=1,
+                                     activation_layer=activation_layer, **internal_conv_kwargs)
+
+        self.fc1 = nn.Linear(in_features=57600, out_features=64)
+        self.fc2 = nn.Linear(in_features=64, out_features=8)
+        self.fc3 = nn.Linear(in_features=8, out_features=1)
+        self.dropout = nn.Dropout(0.2)
 
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
+        # x = self.conv1_1(x)
+        # x = self.relu1(x)
+        # x = self.maxpool1(x)
+        # x = self.batchnorm1(x)
+
+        # print(x.shape)
+
+        # x = self.conv1_2(x)
+        # x = self.relu2(x)
+        # x = self.maxpool2(x)
+        # x = self.batchnorm2(x)
+
+        # print(x.shape)
+
+        # x = self.conv1_3(x)
+        # x = self.relu3(x)
+        # x = self.maxpool3(x)
+        # x = self.batchnorm3(x)
+
+        x = self.ffc_conv1(x)
+        # print(x[0].shape, x[1].shape)      
+        x = self.ffc_conv2(x)
+        # print(x[0].shape, x[1].shape)
+        x = self.ffc_conv3(x)
+        # print(x[0].shape, x[1].shape)
         x = torch.cat((x[0], x[1]), dim=1)
         x = flatten(x, 1)
         x = self.fc1(x)
@@ -202,19 +237,29 @@ class FFC3D(nn.Module):
         x = self.fc2(x)
         if self.is_training:
             x = self.dropout(x)
-        x = self.fc3(x)
+        output = self.fc3(x)
+        # if self.is_training:
+        #     x = self.dropout(x)
+        # output = self.fc4(x)
 
-        output = self.sigmoid(x)
+        # output = torch.sigmoid(x)
+        # print(output)
         return output
 
 
-init_conv_kwargs = {'ratio_gin': 0, 'ratio_gout': 0.5, 'enable_lfu': False}
-internal_conv_kwargs = {'ratio_gin': 0.5, 'ratio_gout': 0.5, 'enable_lfu': False}
-model = FFC3D(input_nc=1, init_conv_kwargs=init_conv_kwargs, internal_conv_kwargs=internal_conv_kwargs)
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-model = model.to(device)
-# print(summary(model, input_size=[10, 1, 3, 128, 128], mode="train", device='cpu'))
+# init_conv_kwargs = {'ratio_gin': 0, 'ratio_gout': 0.5, 'enable_lfu': False}
+# internal_conv_kwargs = {'ratio_gin': 0.5, 'ratio_gout': 0.5, 'enable_lfu': False}
+# model = FFC3D(input_nc=1, init_conv_kwargs=init_conv_kwargs, internal_conv_kwargs=internal_conv_kwargs)
+# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# model = model.to(device)
+# # print(summary(model, input_size=[10, 1, 3, 128, 128], mode="train", device='cpu'))
 
-tensor = torch.zeros([10, 1, 3, 128, 128], dtype=torch.float32)
-# print(model)
-res = model(tensor)
+# tensor = torch.zeros([10, 1, 3, 128, 128], dtype=torch.float32)
+# init_conv_kwargs = {'ratio_gin': 0, 'ratio_gout': 0.75, 'enable_lfu': False}
+# internal_conv_kwargs = {'ratio_gin': 0.75, 'ratio_gout': 0.75, 'enable_lfu': False}
+# model = FFC3D(input_nc=1, init_conv_kwargs=init_conv_kwargs, internal_conv_kwargs=internal_conv_kwargs)
+# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# model = model.to(device)
+# out = model(tensor.to(device))
+# pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+# print("Number of total parameteres: {}".format(pytorch_total_params))
