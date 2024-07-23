@@ -1,7 +1,5 @@
 # Automated Cardiac Coverage Assessment in Cardiovascular Magnetic Resonance Imaging using an Explainable Salient Region Detection Model
 
-This is the code of my B.Sc. thesis project for 4D-CT lung deformable image registration.
-
 ## Proposed Framework
 
 You can see the overall framework for cardiac coverage assessment which has been used in this study.
