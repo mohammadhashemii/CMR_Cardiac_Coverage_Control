@@ -4,7 +4,7 @@ This is a PyTorch implementation of our paper accepted in Medical Physics:
 
 [Automated Cardiac Coverage Assessment in Cardiovascular Magnetic Resonance Imaging using an Explainable Recurrent 3D Dual-Domain Convolutional Network](http://doi.org/10.1002/mp.17411)
 
-## Proposed Framework
+## Proposed Framework 
 
 You can see the overall framework for cardiac coverage assessment which has been used in this study.
 
